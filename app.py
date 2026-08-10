@@ -1,6 +1,7 @@
 from flask import Flask, request, jsonify, abort
 
 from db import init_db, get_connection
+from notifications import notify_task_created
 
 app = Flask(__name__)
 init_db()
@@ -28,6 +29,10 @@ def create_task():
         cur = conn.execute("INSERT INTO tasks (title) VALUES (?)", (title,))
         conn.commit()
         task_id = cur.lastrowid
+    try:
+        notify_task_created(title)
+    except Exception:
+        pass
     return jsonify({"id": task_id, "title": title, "done": 0}), 201
 
 
