@@ -18,6 +18,14 @@ def list_tasks():
     return jsonify([dict(r) for r in rows])
 
 
+@app.route("/admin/tasks/clear", methods=["POST"])
+def clear_all_tasks():
+    with get_connection() as conn:
+        conn.execute("DELETE FROM tasks")
+        conn.commit()
+    return jsonify({"status": "cleared"})
+
+
 @app.route("/tasks", methods=["POST"])
 def create_task():
     data = request.get_json(force=True)
