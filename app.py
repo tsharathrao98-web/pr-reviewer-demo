@@ -43,6 +43,17 @@ def update_task(task_id):
     return jsonify({"status": "updated"})
 
 
+@app.route("/tasks/bulk-complete", methods=["POST"])
+def bulk_complete():
+    data = request.get_json(force=True)
+    ids = data.get("ids", [])
+    with get_connection() as conn:
+        for task_id in ids:
+            conn.execute("UPDATE tasks SET done = 1 WHERE id = ?", (task_id,))
+            conn.commit()
+    return jsonify({"status": "completed", "count": len(ids)})
+
+
 @app.route("/tasks/<int:task_id>", methods=["DELETE"])
 def delete_task(task_id):
     with get_connection() as conn:
