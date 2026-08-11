@@ -5,9 +5,11 @@ import sys
 import time
 from typing import Literal, Optional
 
+import psycopg
 import requests
 from google import genai
 from google.genai import types
+from psycopg.types.json import Jsonb
 from pydantic import BaseModel
 
 MODEL = os.environ.get("REVIEW_MODEL", "gemini-flash-latest")
@@ -146,6 +148,54 @@ def post_fallback_comment(repo, pr_number, token, message):
         log("fallback_comment_failed", error=str(e))
 
 
+def log_run_to_db(
+    repo,
+    pr_number,
+    status,
+    findings_count=0,
+    severity_counts=None,
+    category_counts=None,
+    diff_truncated=False,
+    latency_ms=None,
+    input_tokens=None,
+    output_tokens=None,
+    model=None,
+    error=None,
+):
+    database_url = os.environ.get("DATABASE_URL")
+    if not database_url:
+        log("db_log_skipped", reason="no_database_url")
+        return
+    try:
+        with psycopg.connect(database_url, connect_timeout=5) as conn:
+            conn.execute(
+                """
+                INSERT INTO review_runs
+                    (repo, pr_number, status, findings_count, severity_counts,
+                     category_counts, diff_truncated, latency_ms, input_tokens,
+                     output_tokens, model, error)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """,
+                (
+                    repo,
+                    pr_number,
+                    status,
+                    findings_count,
+                    Jsonb(severity_counts or {}),
+                    Jsonb(category_counts or {}),
+                    diff_truncated,
+                    latency_ms,
+                    input_tokens,
+                    output_tokens,
+                    model,
+                    error,
+                ),
+            )
+    except Exception as e:
+        # Logging is best-effort — never let a DB outage affect whether the review posts.
+        log("db_log_failed", error=str(e))
+
+
 def main():
     repo = os.environ["REPO"]
     pr_number = os.environ["PR_NUMBER"]
@@ -157,13 +207,16 @@ def main():
         diff, truncated = get_diff(base_sha, head_sha)
         if not diff.strip():
             log("review_skipped", reason="empty_diff", pr=pr_number)
+            log_run_to_db(repo=repo, pr_number=int(pr_number), status="skipped")
             return
 
         review, meta = run_review(diff)
         findings = review.get("findings", [])
         severity_counts = {}
+        category_counts = {}
         for f in findings:
             severity_counts[f["severity"]] = severity_counts.get(f["severity"], 0) + 1
+            category_counts[f["category"]] = category_counts.get(f["category"], 0) + 1
 
         body = format_body(review, truncated)
         post_review(repo, pr_number, token, body)
@@ -174,8 +227,22 @@ def main():
             repo=repo,
             findings_count=len(findings),
             severity_counts=severity_counts,
+            category_counts=category_counts,
             diff_truncated=truncated,
             **meta,
+        )
+        log_run_to_db(
+            repo=repo,
+            pr_number=int(pr_number),
+            status="completed",
+            findings_count=len(findings),
+            severity_counts=severity_counts,
+            category_counts=category_counts,
+            diff_truncated=truncated,
+            latency_ms=meta["latency_ms"],
+            input_tokens=meta["input_tokens"],
+            output_tokens=meta["output_tokens"],
+            model=meta["model"],
         )
     except Exception as e:
         log("review_failed", pr=pr_number, repo=repo, error=str(e))
@@ -184,6 +251,9 @@ def main():
             pr_number,
             token,
             "_AI review skipped due to an internal error. See Action logs. Human review still required._",
+        )
+        log_run_to_db(
+            repo=repo, pr_number=int(pr_number), status="failed", model=MODEL, error=str(e)
         )
         # Informational tool only — never fail the check in a way that blocks merging.
         sys.exit(0)

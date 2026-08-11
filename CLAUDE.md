@@ -31,6 +31,20 @@ unavailable to this account mid-project — aliases trade version stability
 for not having to babysit deprecations. Override with the `REVIEW_MODEL` env
 var if a fixed version is ever needed for reproducibility.
 
+## Persistence and dashboard
+
+Every run (`completed`, `failed`, or `skipped`) writes one row to the
+`review_runs` table (`db/schema.sql`) via `log_run_to_db()` in
+`scripts/review_pr.py`. That write is best-effort — a DB outage is caught
+and logged (`db_log_failed`), never allowed to affect whether the review
+itself posts or the check passes. If `DATABASE_URL` isn't set at all, it
+logs `db_log_skipped` and moves on; the reviewer works standalone without a
+database.
+
+`dashboard/app.py` is a separate Streamlit app reading from the same table.
+It has no write access and no coupling to the review flow beyond the schema
+— safe to redeploy or take down without touching the bot.
+
 ## Non-negotiables
 
 - The bot is comment-only (`event: "COMMENT"`), never `REQUEST_CHANGES`, and
