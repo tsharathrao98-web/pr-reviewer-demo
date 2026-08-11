@@ -25,6 +25,12 @@ changes. Structured output is enforced via a Pydantic `response_schema`
 didn't touch `format_body`, `post_review`, or `post_fallback_comment` — the
 provider is isolated to `run_review()` on purpose.
 
+`MODEL` defaults to the `gemini-flash-latest` alias, not a pinned dated
+version. We hit a real 404 from a pinned `gemini-2.5-flash` becoming
+unavailable to this account mid-project — aliases trade version stability
+for not having to babysit deprecations. Override with the `REVIEW_MODEL` env
+var if a fixed version is ever needed for reproducibility.
+
 ## Non-negotiables
 
 - The bot is comment-only (`event: "COMMENT"`), never `REQUEST_CHANGES`, and

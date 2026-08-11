@@ -10,7 +10,7 @@ from google import genai
 from google.genai import types
 from pydantic import BaseModel
 
-MODEL = os.environ.get("REVIEW_MODEL", "gemini-2.5-flash")
+MODEL = os.environ.get("REVIEW_MODEL", "gemini-flash-latest")
 MAX_DIFF_CHARS = 60_000
 
 
