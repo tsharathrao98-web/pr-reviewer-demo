@@ -33,3 +33,13 @@ def test_create_and_list_task(client):
 def test_create_task_requires_title(client):
     resp = client.post("/tasks", json={"title": "  "})
     assert resp.status_code == 400
+
+
+def test_create_task_rejects_invalid_priority(client):
+    resp = client.post("/tasks", json={"title": "ship it", "priority": "urgent!"})
+    assert resp.status_code == 400
+
+
+def test_create_task_defaults_priority(client):
+    resp = client.post("/tasks", json={"title": "ship it"})
+    assert resp.get_json()["priority"] == "normal"

@@ -5,6 +5,8 @@ from db import init_db, get_connection
 app = Flask(__name__)
 init_db()
 
+VALID_PRIORITIES = {"low", "normal", "high"}
+
 
 @app.route("/tasks", methods=["GET"])
 def list_tasks():
@@ -12,7 +14,7 @@ def list_tasks():
     offset = int(request.args.get("offset", 0))
     with get_connection() as conn:
         rows = conn.execute(
-            "SELECT id, title, done FROM tasks ORDER BY id LIMIT ? OFFSET ?",
+            "SELECT id, title, done, priority FROM tasks ORDER BY id LIMIT ? OFFSET ?",
             (limit, offset),
         ).fetchall()
     return jsonify([dict(r) for r in rows])
@@ -24,11 +26,16 @@ def create_task():
     title = (data.get("title") or "").strip()
     if not title:
         abort(400, "title is required")
+    priority = data.get("priority", "normal")
+    if priority not in VALID_PRIORITIES:
+        abort(400, f"priority must be one of {sorted(VALID_PRIORITIES)}")
     with get_connection() as conn:
-        cur = conn.execute("INSERT INTO tasks (title) VALUES (?)", (title,))
+        cur = conn.execute(
+            "INSERT INTO tasks (title, priority) VALUES (?, ?)", (title, priority)
+        )
         conn.commit()
         task_id = cur.lastrowid
-    return jsonify({"id": task_id, "title": title, "done": 0}), 201
+    return jsonify({"id": task_id, "title": title, "done": 0, "priority": priority}), 201
 
 
 @app.route("/tasks/<int:task_id>", methods=["PATCH"])
