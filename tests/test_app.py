@@ -26,7 +26,7 @@ def test_create_and_list_task(client):
 
     resp = client.get("/tasks")
     assert resp.status_code == 200
-    titles = [t["title"] for t in resp.get_json()]
+    titles = [t["title"] for t in resp.get_json()["items"]]
     assert "write tests" in titles
 
 

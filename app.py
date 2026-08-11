@@ -15,7 +15,11 @@ def list_tasks():
             "SELECT id, title, done FROM tasks ORDER BY id LIMIT ? OFFSET ?",
             (limit, offset),
         ).fetchall()
-    return jsonify([dict(r) for r in rows])
+        total = conn.execute("SELECT COUNT(*) AS c FROM tasks").fetchone()["c"]
+    has_more = offset + limit <= total
+    return jsonify(
+        {"items": [dict(r) for r in rows], "has_more": has_more, "total": total}
+    )
 
 
 @app.route("/tasks", methods=["POST"])
