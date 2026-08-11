@@ -18,6 +18,15 @@ def list_tasks():
     return jsonify([dict(r) for r in rows])
 
 
+@app.route("/tasks/search", methods=["GET"])
+def search_tasks():
+    q = request.args.get("q", "")
+    query = f"SELECT id, title, done FROM tasks WHERE title LIKE '%{q}%'"
+    with get_connection() as conn:
+        rows = conn.execute(query).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
 @app.route("/tasks", methods=["POST"])
 def create_task():
     data = request.get_json(force=True)
