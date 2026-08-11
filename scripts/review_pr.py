@@ -3,56 +3,37 @@ import os
 import subprocess
 import sys
 import time
+from typing import Literal, Optional
 
 import requests
-from anthropic import Anthropic
+from google import genai
+from google.genai import types
+from pydantic import BaseModel
 
-MODEL = os.environ.get("REVIEW_MODEL", "claude-sonnet-5")
+MODEL = os.environ.get("REVIEW_MODEL", "gemini-2.5-flash")
 MAX_DIFF_CHARS = 60_000
 
-REVIEW_TOOL = {
-    "name": "submit_review",
-    "description": "Submit structured code review findings for this pull request diff.",
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "summary": {
-                "type": "string",
-                "description": "1-3 sentence overall assessment of the PR.",
-            },
-            "findings": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "file": {"type": "string"},
-                        "line": {"type": "integer"},
-                        "severity": {
-                            "type": "string",
-                            "enum": ["high", "medium", "low"],
-                        },
-                        "category": {
-                            "type": "string",
-                            "enum": [
-                                "injection",
-                                "broken-auth",
-                                "sensitive-data-exposure",
-                                "secrets",
-                                "correctness",
-                                "performance",
-                                "other",
-                            ],
-                        },
-                        "issue": {"type": "string"},
-                        "recommendation": {"type": "string"},
-                    },
-                    "required": ["file", "severity", "category", "issue", "recommendation"],
-                },
-            },
-        },
-        "required": ["summary", "findings"],
-    },
-}
+
+class Finding(BaseModel):
+    file: str
+    line: Optional[int] = None
+    severity: Literal["high", "medium", "low"]
+    category: Literal[
+        "injection",
+        "broken-auth",
+        "sensitive-data-exposure",
+        "secrets",
+        "correctness",
+        "performance",
+        "other",
+    ]
+    issue: str
+    recommendation: str
+
+
+class Review(BaseModel):
+    summary: str
+    findings: list[Finding]
 
 SYSTEM_PROMPT = """You are a senior code reviewer. Review the given pull request diff for:
 - OWASP-style security issues: injection (SQL/command/etc.), broken auth/missing authz checks,
@@ -84,25 +65,30 @@ def get_diff(base_sha, head_sha):
 
 
 def run_review(diff):
-    client = Anthropic()
+    client = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
     started = time.time()
-    resp = client.messages.create(
+    resp = client.models.generate_content(
         model=MODEL,
-        max_tokens=4096,
-        system=SYSTEM_PROMPT,
-        tools=[REVIEW_TOOL],
-        tool_choice={"type": "tool", "name": "submit_review"},
-        messages=[{"role": "user", "content": f"Review this diff:\n\n{diff}"}],
+        contents=f"Review this diff:\n\n{diff}",
+        config=types.GenerateContentConfig(
+            system_instruction=SYSTEM_PROMPT,
+            response_mime_type="application/json",
+            response_schema=Review,
+            max_output_tokens=4096,
+        ),
     )
     latency_ms = int((time.time() - started) * 1000)
-    tool_use = next(b for b in resp.content if b.type == "tool_use")
+    review = resp.parsed
+    if review is None:
+        raise ValueError(f"model did not return a schema-conformant response: {resp.text!r}")
+    usage = resp.usage_metadata
     meta = {
         "latency_ms": latency_ms,
-        "input_tokens": resp.usage.input_tokens,
-        "output_tokens": resp.usage.output_tokens,
+        "input_tokens": usage.prompt_token_count if usage else None,
+        "output_tokens": usage.candidates_token_count if usage else None,
         "model": MODEL,
     }
-    return tool_use.input, meta
+    return review.model_dump(), meta
 
 
 def format_body(review, truncated):

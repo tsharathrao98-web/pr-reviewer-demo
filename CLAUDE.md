@@ -12,9 +12,18 @@ catch.
 The bot only flags: SQL/command injection, missing auth/authz checks,
 hardcoded secrets, off-by-one/edge-case correctness bugs, and N+1 query /
 missing-batching performance issues. It does not flag style or naming — keep
-it that way. Expanding the rubric means expanding `REVIEW_TOOL`'s `category`
-enum *and* the system prompt's bullet list together, or the model will
+it that way. Expanding the rubric means expanding the `Finding.category`
+Literal *and* the system prompt's bullet list together, or the model will
 silently invent categories outside the schema.
+
+## Model provider
+
+Uses the Gemini API (`google-genai`), not Claude — a cost call, not a
+technical one; swap `MODEL`/the `genai.Client` call in `run_review()` if that
+changes. Structured output is enforced via a Pydantic `response_schema`
+(Gemini's JSON-mode equivalent of Claude's forced tool-use), so this swap
+didn't touch `format_body`, `post_review`, or `post_fallback_comment` — the
+provider is isolated to `run_review()` on purpose.
 
 ## Non-negotiables
 
